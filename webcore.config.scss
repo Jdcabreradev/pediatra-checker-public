@@ -1,0 +1,16 @@
+// Webcore configuration for SCP Santander Theme
+$primary: #004b93;
+$secondary: #00a9e0;
+$success: #8cc63f;
+$info: #004b93;
+$warning: #f7941d;
+$danger: #e63946;
+
+$font-family: 'Plus Jakarta Sans', sans-serif;
+
+// Map colors to webcore variables if needed, though webcore often picks these up.
+:root {
+    --w-color-primary: #{$primary};
+    --w-color-secondary: #{$secondary};
+    --w-color-success: #{$success};
+}

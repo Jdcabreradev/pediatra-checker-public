@@ -1,0 +1,23 @@
+---
+import Layout from '../layouts/Layout.astro';
+import AdminPanel from '../components/AdminPanel';
+import { ShieldCheck } from 'lucide-react';
+---
+
+<Layout title="Administración - PediatraChecker">
+	<main class="min-h-screen bg-slate-50">
+		<nav class="bg-white border-b border-slate-200 px-6 py-4">
+			<div class="max-w-6xl mx-auto flex justify-between items-center">
+				<a href="/" class="flex items-center gap-2 text-indigo-600 font-bold text-xl">
+					<ShieldCheck className="w-8 h-8" />
+					<span>PediatraChecker <span class="text-slate-400 font-normal">Admin</span></span>
+				</a>
+				<a href="/" class="text-slate-600 hover:text-indigo-600 font-medium transition-colors">
+					Volver al Chat
+				</a>
+			</div>
+		</nav>
+
+		<AdminPanel client:load />
+	</main>
+</Layout>

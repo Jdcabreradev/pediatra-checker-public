@@ -1,0 +1,65 @@
+[
+  {
+    "id": "1",
+    "name": "Dr. Daladier Cabrera Rodríguez",
+    "specialty": "Pediatría - Presidente SCP Santander",
+    "registry": "RM-12345",
+    "city": "Bucaramanga",
+    "status": "Activo",
+    "office": "Bucaramanga - Sede Principal"
+  },
+  {
+    "id": "2",
+    "name": "Dra. Martha Lucía Ortiz",
+    "specialty": "Pediatría General",
+    "registry": "RM-67890",
+    "city": "Bucaramanga",
+    "status": "Activo",
+    "office": "Clínica San Luis"
+  },
+  {
+    "id": "3",
+    "name": "Dr. Luis Alfonso Pérez",
+    "specialty": "Neonatología",
+    "registry": "RM-11223",
+    "city": "Bucaramanga",
+    "status": "Activo",
+    "office": "Hospital Universitario de Santander"
+  },
+  {
+    "id": "4",
+    "name": "Dr. Jorge Luis Pérez",
+    "specialty": "Pediatría Especializada",
+    "registry": "RM-44556",
+    "city": "Floridablanca",
+    "status": "Activo",
+    "office": "FOSCAL"
+  },
+  {
+    "id": "5",
+    "name": "Dra. Sandra Milena Mantilla",
+    "specialty": "Pediatría y Nutrición",
+    "registry": "RM-77889",
+    "city": "Bucaramanga",
+    "status": "Activo",
+    "office": "Consultorio Independiente"
+  },
+  {
+    "id": "6",
+    "name": "Dr. Carlos Alberto Olarte",
+    "specialty": "Pediatría - Infectología",
+    "registry": "RM-22334",
+    "city": "Bucaramanga",
+    "status": "Activo",
+    "office": "Clínica Chicamocha"
+  },
+  {
+    "id": "7",
+    "name": "Dra. Claudia Mercedes Mantilla",
+    "specialty": "Pediatría General",
+    "registry": "RM-55667",
+    "city": "Bucaramanga",
+    "status": "Activo",
+    "office": "Consultorios UIS"
+  }
+]

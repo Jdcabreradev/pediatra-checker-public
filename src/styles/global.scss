@@ -1,0 +1,49 @@
+@use 'webcoreui/styles' as *;
+@include setup((
+    includeResets: true,
+    includeUtilities: true,
+    includeScrollbarStyles: true
+));
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply antialiased;
+  }
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0,0,0,0.05);
+  border-radius: 10px;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0,0,0,0.1);
+}
+
+.shadow-3xl {
+  box-shadow: 0 35px 60px -15px rgba(0, 0, 0, 0.3);
+}
+
+@keyframes slide-in-from-bottom-2 {
+  from { transform: translateY(0.5rem); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+.animate-in {
+  animation: slide-in-from-bottom-2 0.3s ease-out forwards;
+}
+
+// Custom overrides for SCP theme
+header {
+    background-color: rgba(255, 255, 255, 0.9) !important;
+    border-bottom: 2px solid var(--w-color-primary) !important;
+}
