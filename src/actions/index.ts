@@ -1,6 +1,6 @@
 import { defineAction } from 'astro:actions';
 import { z } from 'astro:schema';
-import ollama from 'ollama';
+import { Ollama } from 'ollama';
 import * as lancedb from '@lancedb/lancedb';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -13,9 +13,10 @@ const DB_PATH = path.join(DATA_DIR, 'lancedb');
 const TABLE_NAME = 'pediatricians';
 const JSON_PATH = path.join(DATA_DIR, 'pediatricians.json');
 
+const ollama = new Ollama({ host: process.env.OLLAMA_HOST || 'http://localhost:11434' });
+
 // Helper to get embeddings from Ollama
 async function getEmbedding(text: string) {
-  const host = process.env.OLLAMA_HOST || 'http://localhost:11434';
   const response = await ollama.embeddings({
     model: 'nomic-embed-text',
     prompt: text,
@@ -29,7 +30,6 @@ async function getCurrentData() {
     const data = await fs.readFile(JSON_PATH, 'utf-8');
     return JSON.parse(data);
   } catch (e) {
-    // If file doesn't exist, ensure directory and write initial data
     await fs.mkdir(DATA_DIR, { recursive: true });
     await fs.writeFile(JSON_PATH, JSON.stringify(initialData, null, 2));
     return initialData;
