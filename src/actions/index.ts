@@ -5,12 +5,17 @@ import * as lancedb from '@lancedb/lancedb';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-const DB_PATH = './data/lancedb';
+// Initial data imported at build time
+import initialData from '../data/pediatricians.json';
+
+const DATA_DIR = path.resolve(process.cwd(), 'data');
+const DB_PATH = path.join(DATA_DIR, 'lancedb');
 const TABLE_NAME = 'pediatricians';
-const JSON_PATH = './src/data/pediatricians.json';
+const JSON_PATH = path.join(DATA_DIR, 'pediatricians.json');
 
 // Helper to get embeddings from Ollama
 async function getEmbedding(text: string) {
+  const host = process.env.OLLAMA_HOST || 'http://localhost:11434';
   const response = await ollama.embeddings({
     model: 'nomic-embed-text',
     prompt: text,
@@ -18,10 +23,23 @@ async function getEmbedding(text: string) {
   return response.embedding;
 }
 
+// Get current data (from file or fallback to initial)
+async function getCurrentData() {
+  try {
+    const data = await fs.readFile(JSON_PATH, 'utf-8');
+    return JSON.parse(data);
+  } catch (e) {
+    // If file doesn't exist, ensure directory and write initial data
+    await fs.mkdir(DATA_DIR, { recursive: true });
+    await fs.writeFile(JSON_PATH, JSON.stringify(initialData, null, 2));
+    return initialData;
+  }
+}
+
 // Sync JSON to LanceDB
 async function syncDatabase() {
   const db = await lancedb.connect(DB_PATH);
-  const data = JSON.parse(await fs.readFile(JSON_PATH, 'utf-8'));
+  const data = await getCurrentData();
   
   const records = await Promise.all(data.map(async (p: any) => ({
     vector: await getEmbedding(`${p.name} ${p.specialty} ${p.registry} ${p.city}`),
@@ -41,8 +59,18 @@ async function syncDatabase() {
   return await db.createTable(TABLE_NAME, records);
 }
 
+// Helper to get table, auto-initializing if needed
+async function getTable() {
+  const db = await lancedb.connect(DB_PATH);
+  try {
+    return await db.openTable(TABLE_NAME);
+  } catch (e) {
+    console.log('Table not found, initializing...');
+    return await syncDatabase();
+  }
+}
+
 export const server = {
-  // Action to chat using RAG
   chat: defineAction({
     input: z.object({
       messages: z.array(z.object({ role: z.string(), content: z.string() }))
@@ -50,13 +78,12 @@ export const server = {
     handler: async ({ messages }) => {
       const lastMessage = messages[messages.length - 1].content;
       
-      const db = await lancedb.connect(DB_PATH);
-      const table = await db.openTable(TABLE_NAME);
-      
-      const queryVector = await getEmbedding(lastMessage);
-      const results = await table.search(queryVector).limit(3).toArray();
+      try {
+        const table = await getTable();
+        const queryVector = await getEmbedding(lastMessage);
+        const results = await table.search(queryVector).limit(3).toArray();
 
-      const systemPrompt = `Eres un asistente experto y profesional de la Sociedad de Pediatría Regional Santander. Tu tono es médico, amable y formal.
+        const systemPrompt = `Eres un asistente experto y profesional de la Sociedad de Pediatría Regional Santander. Tu tono es médico, amable y formal.
 Usa EXCLUSIVAMENTE la siguiente información de afiliados recuperada de la base de datos para responder consultas sobre especialistas.
 
 CONTEXTO DE AFILIADOS RELEVANTES:
@@ -68,20 +95,22 @@ REGLAS:
 3. Sugiere contactar al +57 318 8017142 para más información si es necesario.
 4. No inventes información.`;
 
-      const response = await ollama.chat({
-        model: 'llama3.2:3b',
-        messages: [{ role: 'system', content: systemPrompt }, ...messages]
-      });
+        const response = await ollama.chat({
+          model: 'llama3.2:3b',
+          messages: [{ role: 'system', content: systemPrompt }, ...messages]
+        });
 
-      return { role: 'assistant', content: response.message.content };
+        return { role: 'assistant', content: response.message.content };
+      } catch (error: any) {
+        console.error('Chat Error:', error);
+        return { role: 'assistant', content: 'Error: ' + error.message };
+      }
     }
   }),
 
-  // CRUD Actions
   getPediatricians: defineAction({
     handler: async () => {
-      const data = await fs.readFile(JSON_PATH, 'utf-8');
-      return JSON.parse(data);
+      return await getCurrentData();
     }
   }),
 
@@ -96,16 +125,19 @@ REGLAS:
       office: z.string()
     }),
     handler: async (input) => {
-      const data = JSON.parse(await fs.readFile(JSON_PATH, 'utf-8'));
+      const data = await getCurrentData();
       if (input.id) {
         const index = data.findIndex((p: any) => p.id === input.id);
-        data[index] = input;
+        if (index !== -1) data[index] = input;
+        else data.push(input);
       } else {
-        const newId = (Math.max(...data.map((p: any) => parseInt(p.id))) + 1).toString();
-        data.push({ ...input, id: newId });
+        const nextId = data.length > 0 
+          ? (Math.max(...data.map((p: any) => parseInt(p.id) || 0)) + 1).toString()
+          : "1";
+        data.push({ ...input, id: nextId });
       }
       await fs.writeFile(JSON_PATH, JSON.stringify(data, null, 2));
-      await syncDatabase(); // Update vector db
+      await syncDatabase();
       return { success: true };
     }
   }),
@@ -113,7 +145,7 @@ REGLAS:
   deletePediatrician: defineAction({
     input: z.object({ id: z.string() }),
     handler: async ({ id }) => {
-      const data = JSON.parse(await fs.readFile(JSON_PATH, 'utf-8'));
+      const data = await getCurrentData();
       const filtered = data.filter((p: any) => p.id !== id);
       await fs.writeFile(JSON_PATH, JSON.stringify(filtered, null, 2));
       await syncDatabase();
