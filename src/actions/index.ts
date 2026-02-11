@@ -54,7 +54,7 @@ export const server = {
       const table = await db.openTable(TABLE_NAME);
       
       const queryVector = await getEmbedding(lastMessage);
-      const results = await table.search(queryVector).limit(3).execute();
+      const results = await table.search(queryVector).limit(3).toArray();
 
       const systemPrompt = `Eres un asistente experto y profesional de la Sociedad de Pediatría Regional Santander. Tu tono es médico, amable y formal.
 Usa EXCLUSIVAMENTE la siguiente información de afiliados recuperada de la base de datos para responder consultas sobre especialistas.
