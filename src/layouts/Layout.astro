@@ -16,30 +16,26 @@ const { title } = Astro.props;
 		<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 		<title>{title}</title>
 	</head>
-	<body class="bg-slate-50 text-slate-900 font-sans min-h-screen flex flex-col m-0 p-0 overflow-hidden">
+	<body style="display: flex; flex-direction: column; height: 100vh; width: 100vw; margin: 0; padding: 0; overflow: hidden; background-color: #f8fafc; font-family: 'Plus Jakarta Sans', sans-serif;">
 		
-		<header class="w-full bg-white border-b border-slate-200 px-4 py-4 flex items-center justify-between shadow-sm z-50 flex-shrink-0">
-			<div class="font-black text-xl tracking-tighter text-indigo-600 uppercase">
+		<header style="width: 100%; height: 60px; background-color: white; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; box-sizing: border-box; flex-shrink: 0; z-index: 100;">
+			<div style="font-weight: 900; font-size: 1.25rem; color: #4f46e5; text-transform: uppercase; letter-spacing: -0.05em;">
 				SPCS
 			</div>
 			
 			<nav>
-				<ul class="flex gap-4 text-[10px] md:text-xs font-bold uppercase tracking-widest text-slate-500">
+				<ul style="display: flex; gap: 20px; list-style: none; margin: 0; padding: 0; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #64748b;">
 					<li>
-						<a href="/" class="hover:text-indigo-600 transition-colors">
-							Chat
-						</a>
+						<a href="/" style="text-decoration: none; color: inherit;">Chat</a>
 					</li>
 					<li>
-						<a href="/admin" class="hover:text-indigo-600 transition-colors">
-							Administrar
-						</a>
+						<a href="/admin" style="text-decoration: none; color: inherit;">Admin</a>
 					</li>
 				</ul>
 			</nav>
 		</header>
 
-		<main class="flex-grow w-full relative overflow-hidden flex flex-col">
+		<main style="flex: 1; position: relative; overflow: hidden; width: 100%; display: flex; flex-direction: column;">
 			<slot />
 		</main>
 
@@ -48,15 +44,4 @@ const { title } = Astro.props;
 
 <style is:global>
 	@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap');
-
-	body {
-		font-family: 'Plus Jakarta Sans', sans-serif;
-	}
-
-	html, body {
-		height: 100vh;
-		width: 100vw;
-		margin: 0;
-		padding: 0;
-	}
 </style>

@@ -13,17 +13,6 @@ const DB_PATH = path.join(DATA_DIR, 'lancedb');
 const TABLE_NAME = 'pediatricians';
 const JSON_PATH = path.join(DATA_DIR, 'pediatricians.json');
 
-const ollama = new Ollama({ host: process.env.OLLAMA_HOST || 'http://localhost:11434' });
-
-// Helper to get embeddings from Ollama
-async function getEmbedding(text: string) {
-  const response = await ollama.embeddings({
-    model: 'nomic-embed-text',
-    prompt: text,
-  });
-  return response.embedding;
-}
-
 // Get current data (from file or fallback to initial)
 async function getCurrentData() {
   try {
@@ -36,37 +25,37 @@ async function getCurrentData() {
   }
 }
 
-// Sync JSON to LanceDB
-async function syncDatabase() {
-  const db = await lancedb.connect(DB_PATH);
-  const data = await getCurrentData();
-  
-  const records = await Promise.all(data.map(async (p: any) => ({
-    vector: await getEmbedding(`${p.name} ${p.specialty} ${p.registry} ${p.city}`),
-    id: p.id,
-    name: p.name,
-    specialty: p.specialty,
-    registry: p.registry,
-    city: p.city,
-    status: p.status,
-    office: p.office
-  })));
-
-  try {
-    await db.dropTable(TABLE_NAME);
-  } catch (e) {}
-  
-  return await db.createTable(TABLE_NAME, records);
-}
-
 // Helper to get table, auto-initializing if needed
 async function getTable() {
   const db = await lancedb.connect(DB_PATH);
   try {
     return await db.openTable(TABLE_NAME);
   } catch (e) {
-    console.log('Table not found, initializing...');
-    return await syncDatabase();
+    console.log('Table not found, initializing database...');
+    
+    // Initialize Ollama client here for sync
+    const ollama = new Ollama({ host: process.env.OLLAMA_HOST || 'http://host.docker.internal:11434' });
+    const data = await getCurrentData();
+    
+    const records = await Promise.all(data.map(async (p: any) => {
+      const resp = await ollama.embeddings({
+        model: 'nomic-embed-text',
+        prompt: `${p.name} ${p.specialty} ${p.registry} ${p.city}`,
+      });
+      return {
+        vector: resp.embedding,
+        id: p.id,
+        name: p.name,
+        specialty: p.specialty,
+        registry: p.registry,
+        city: p.city,
+        status: p.status,
+        office: p.office
+      };
+    }));
+
+    try { await db.dropTable(TABLE_NAME); } catch (err) {}
+    return await db.createTable(TABLE_NAME, records);
   }
 }
 
@@ -77,11 +66,18 @@ export const server = {
     }),
     handler: async ({ messages }) => {
       const lastMessage = messages[messages.length - 1].content;
+      const ollama = new Ollama({ host: process.env.OLLAMA_HOST || 'http://host.docker.internal:11434' });
       
       try {
         const table = await getTable();
-        const queryVector = await getEmbedding(lastMessage);
-        const results = await table.search(queryVector).limit(3).toArray();
+        
+        // Get embedding for query
+        const queryResp = await ollama.embeddings({
+          model: 'nomic-embed-text',
+          prompt: lastMessage,
+        });
+        
+        const results = await table.search(queryResp.embedding).limit(3).toArray();
 
         const systemPrompt = `Eres un asistente experto y profesional de la Sociedad de Pediatría Regional Santander. Tu tono es médico, amable y formal.
 Usa EXCLUSIVAMENTE la siguiente información de afiliados recuperada de la base de datos para responder consultas sobre especialistas.
@@ -102,8 +98,8 @@ REGLAS:
 
         return { role: 'assistant', content: response.message.content };
       } catch (error: any) {
-        console.error('Chat Error:', error);
-        return { role: 'assistant', content: 'Error: ' + error.message };
+        console.error('Chat Error Detail:', error);
+        return { role: 'assistant', content: 'Error de comunicación con el motor de IA: ' + error.message };
       }
     }
   }),
@@ -137,7 +133,12 @@ REGLAS:
         data.push({ ...input, id: nextId });
       }
       await fs.writeFile(JSON_PATH, JSON.stringify(data, null, 2));
-      await syncDatabase();
+      
+      // Re-initialize DB to force sync
+      const db = await lancedb.connect(DB_PATH);
+      try { await db.dropTable(TABLE_NAME); } catch (e) {}
+      await getTable(); 
+      
       return { success: true };
     }
   }),
@@ -148,7 +149,11 @@ REGLAS:
       const data = await getCurrentData();
       const filtered = data.filter((p: any) => p.id !== id);
       await fs.writeFile(JSON_PATH, JSON.stringify(filtered, null, 2));
-      await syncDatabase();
+      
+      const db = await lancedb.connect(DB_PATH);
+      try { await db.dropTable(TABLE_NAME); } catch (e) {}
+      await getTable();
+
       return { success: true };
     }
   })
