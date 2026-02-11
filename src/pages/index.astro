@@ -3,49 +3,8 @@ import Layout from '../layouts/Layout.astro';
 import ChatInterface from '../components/ChatInterface';
 ---
 
-<Layout title="Directorio SCP Santander | Verificación de Pediatras">
-	{/* Main Content */}
-	<div class="min-h-screen flex flex-col justify-center items-center px-4 relative overflow-hidden">
-        {/* Background elements */}
-		<div class="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-[1000px] h-[300px] bg-blue-50/50 blur-[80px] rounded-full -z-10 animate-pulse"></div>
-
-        {/* Minimal Header */}
-        <div class="text-center mb-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-            <h1 class="text-3xl md:text-4xl font-black text-slate-900 mb-2 tracking-tight">
-                PediatraChecker
-            </h1>
-            <p class="text-slate-500 font-medium text-sm md:text-base">
-                Verificación oficial de especialistas SCP Santander
-            </p>
-        </div>
-
-        {/* Chat Interface Container */}
-		<div class="w-full max-w-4xl h-[600px] md:h-[650px] relative z-10 animate-in fade-in slide-in-from-bottom-6 duration-1000">
-			<div class="absolute -inset-4 bg-primary/5 blur-3xl opacity-50 rounded-[2.5rem] -z-10"></div>
-			<div class="h-full transform transition-transform duration-500 shadow-2xl rounded-[2rem] overflow-hidden bg-white border border-slate-100">
-				<ChatInterface client:load />
-			</div>
-		</div>
-        
-        {/* Footer/Credits */}
-        <div class="mt-8 text-center text-slate-400 text-xs font-semibold uppercase tracking-widest animate-in fade-in delay-500">
-            Sociedad de Pediatría Regional Santander
-        </div>
+<Layout title="SPCS Chat">
+	<div class="flex-grow flex items-stretch overflow-hidden">
+		<ChatInterface client:load />
 	</div>
 </Layout>
-
-<style>
-	@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
-	@keyframes slide-in-from-bottom {
-		from { transform: translateY(20px); opacity: 0; }
-		to { transform: translateY(0); opacity: 1; }
-	}
-	
-	.animate-in {
-		animation: slide-in-from-bottom 0.8s ease-out forwards;
-	}
-    
-    .text-primary {
-        color: var(--w-color-primary);
-    }
-</style>

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, User, Bot, Info, Sparkles, AlertCircle } from 'lucide-react';
+import { Send, User, Bot } from 'lucide-react';
 import { actions } from 'astro:actions';
 import { Button, Input, Spinner } from 'webcoreui/react';
 
@@ -48,47 +48,21 @@ const ChatInterface = () => {
   };
 
   return (
-    <div className="flex flex-col h-full w-full bg-white shadow-3xl rounded-[1.5rem] md:rounded-[2.5rem] overflow-hidden border border-slate-100 relative">
-      {/* Chat Header */}
-      <div className="bg-primary p-4 md:p-8 text-white flex items-center justify-between shadow-2xl relative overflow-hidden flex-shrink-0">
-        <div className="absolute top-0 right-0 w-64 h-64 bg-white/5 blur-3xl rounded-full -mr-20 -mt-20"></div>
-        
-        <div className="flex items-center gap-3 md:gap-5 relative z-10">
-          <div className="bg-white/15 p-2.5 md:p-4 rounded-xl md:rounded-[1.5rem] backdrop-blur-2xl border border-white/20 shadow-inner">
-            <Sparkles size={20} className="text-blue-100 md:hidden" />
-            <Sparkles size={28} className="text-blue-100 hidden md:block" />
-          </div>
-          <div className="text-left">
-            <h3 className="font-black text-sm md:text-xl uppercase tracking-wider leading-tight">Asistente Virtual SCP</h3>
-            <div className="flex items-center gap-2 mt-0.5 md:mt-1">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-green-500"></span>
-              </span>
-              <p className="text-[8px] md:text-[10px] text-blue-100 font-black uppercase tracking-[0.2em]">En línea</p>
-            </div>
-          </div>
-        </div>
-        <button className="p-2 md:p-3 bg-white/10 hover:bg-white/20 rounded-xl md:rounded-2xl transition-all active:scale-90 border border-white/10 group">
-          <Info size={18} className="md:hidden" />
-          <Info size={24} className="group-hover:rotate-12 transition-transform hidden md:block" />
-        </button>
-      </div>
-
+    <div className="flex flex-col h-full w-full bg-white relative overflow-hidden">
       {/* Chat Messages */}
       <div className="flex-grow overflow-y-auto p-4 md:p-8 space-y-6 md:space-y-8 bg-slate-50/30 custom-scrollbar relative">
         {messages.map((m, i) => (
-          <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-4 duration-500`}>
-            <div className={`flex gap-3 md:gap-5 max-w-[90%] md:max-w-[85%] ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
-              <div className={`mt-1 md:mt-2 p-2 md:p-3 rounded-xl md:rounded-2xl flex-shrink-0 shadow-lg ${m.role === 'user' ? 'bg-primary text-white' : 'bg-white text-slate-400 border border-slate-100'}`}>
-                {m.role === 'user' ? <User size={16} className="md:w-5 md:h-5" strokeWidth={2.5} /> : <Bot size={16} className="md:w-5 md:h-5" strokeWidth={2.5} />}
+          <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+            <div className={`flex gap-3 md:gap-4 max-w-[95%] md:max-w-[85%] ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
+              <div className={`mt-1 p-2 rounded-lg flex-shrink-0 shadow-sm ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 border border-slate-100'}`}>
+                {m.role === 'user' ? <User size={14} /> : <Bot size={14} />}
               </div>
-              <div className={`p-4 md:p-6 rounded-2xl md:rounded-[2rem] shadow-xl relative group text-left ${
+              <div className={`p-3 md:p-4 rounded-2xl shadow-sm relative text-left ${
                 m.role === 'user' 
-                  ? 'bg-primary text-white rounded-tr-none border border-blue-800' 
-                  : 'bg-white text-slate-800 border border-slate-50 rounded-tl-none shadow-slate-100/50'
+                  ? 'bg-indigo-600 text-white rounded-tr-none' 
+                  : 'bg-white text-slate-800 border border-slate-100 rounded-tl-none'
               }`}>
-                <p className="text-sm md:text-base leading-relaxed font-bold tracking-tight">{m.content}</p>
+                <p className="text-sm md:text-base leading-relaxed font-medium">{m.content}</p>
               </div>
             </div>
           </div>
@@ -96,12 +70,12 @@ const ChatInterface = () => {
         
         {isLoading && (
           <div className="flex justify-start">
-            <div className="flex gap-3 md:gap-5 max-w-[85%]">
-              <div className="mt-1 md:mt-2 p-2 md:p-3 rounded-xl md:rounded-2xl bg-white text-primary border border-slate-100 shadow-lg">
-                <Spinner size={20} />
+            <div className="flex gap-3 md:gap-4 max-w-[85%]">
+              <div className="mt-1 p-2 rounded-lg bg-white text-indigo-600 border border-slate-100 shadow-sm">
+                <Spinner size={16} />
               </div>
-              <div className="p-4 md:p-6 rounded-2xl md:rounded-[2rem] bg-white text-slate-400 border border-slate-100 rounded-tl-none italic text-[10px] md:text-sm font-black uppercase tracking-widest flex items-center gap-3">
-                Consultando...
+              <div className="p-3 md:p-4 rounded-2xl bg-white text-slate-400 border border-slate-100 rounded-tl-none italic text-xs flex items-center">
+                Consultando base de datos...
               </div>
             </div>
           </div>
@@ -110,11 +84,11 @@ const ChatInterface = () => {
       </div>
 
       {/* Chat Input */}
-      <div className="p-4 md:p-8 bg-white border-t border-slate-100 relative flex-shrink-0">
-        <form onSubmit={handleSend} className="flex gap-2 md:gap-3 items-center">
+      <div className="p-3 md:p-6 bg-white border-t border-slate-100 relative flex-shrink-0">
+        <form onSubmit={handleSend} className="flex gap-2 items-center max-w-4xl mx-auto">
             <div className="flex-grow">
                 <Input 
-                    placeholder="Nombre del pediatra..."
+                    placeholder="Escribe el nombre del pediatra..."
                     value={input}
                     onChange={(e: any) => setInput(e.target.value)}
                     disabled={isLoading}
@@ -125,21 +99,9 @@ const ChatInterface = () => {
                 type="submit"
                 disabled={!input.trim() || isLoading}
             >
-                {isLoading ? <Spinner size={20} color="white" /> : <Send size={20} />}
+                {isLoading ? <Spinner size={18} color="white" /> : <Send size={18} />}
             </Button>
         </form>
-        
-        <div className="flex justify-between items-center mt-4 md:mt-6 px-1 md:px-4">
-          <div className="flex items-center gap-2 text-slate-400">
-             <AlertCircle size={12} className="md:w-3.5 md:h-3.5" />
-             <p className="text-[8px] md:text-[10px] font-black uppercase tracking-widest">
-               Directorio Oficial SCP 2026
-             </p>
-          </div>
-          <p className="text-[8px] md:text-[10px] text-slate-300 font-black uppercase tracking-widest hidden xs:block">
-            SCP Santander · <a href="/admin" className="text-indigo-400 hover:text-indigo-600 underline">Admin</a>
-          </p>
-        </div>
       </div>
     </div>
   );
