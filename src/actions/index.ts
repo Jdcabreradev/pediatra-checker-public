@@ -15,7 +15,7 @@ const JSON_PATH = path.join(DATA_DIR, 'pediatricians.json');
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-const EMBED_MODEL = "embedding-001"; // Stable embedding model
+const EMBED_MODEL = "gemini-embedding-001";
 const CHAT_MODEL = "gemini-1.5-flash";
 
 // Helper to get embeddings from Gemini
@@ -23,7 +23,6 @@ async function getEmbedding(text: string) {
   console.log(`[ACTIONS] Embedding text: ${text.substring(0, 30)}...`);
   if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY no configurada');
   
-  // Use the correct model name
   const model = genAI.getGenerativeModel({ model: EMBED_MODEL });
   const result = await model.embedContent(text);
   return result.embedding.values;
