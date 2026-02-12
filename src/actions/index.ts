@@ -22,9 +22,7 @@ const ollama = new Ollama({ host: process.env.OLLAMA_HOST || 'http://host.docker
 const EMBED_MODEL = "nomic-embed-text";
 const CHAT_MODEL = "llama-3.1-8b-instant";
 
-// Helper to get embeddings from local Ollama (Free & Offline)
 async function getEmbedding(text: string) {
-  console.log(`[ACTIONS] Generating local embedding for: ${text.substring(0, 30)}...`);
   const response = await ollama.embeddings({
     model: EMBED_MODEL,
     prompt: text,
@@ -44,27 +42,21 @@ async function getCurrentData() {
 }
 
 async function syncDatabase() {
-  console.log('[ACTIONS] Syncing database with local embeddings...');
   const db = await lancedb.connect(DB_PATH);
   const data = await getCurrentData();
   
   const records = await Promise.all(data.map(async (p: any) => {
-    try {
-      const vector = await getEmbedding(`${p.name} ${p.specialty} ${p.registry} ${p.city}`);
-      return {
-        vector,
-        id: p.id,
-        name: p.name,
-        specialty: p.specialty,
-        registry: p.registry,
-        city: p.city,
-        status: p.status,
-        office: p.office
-      };
-    } catch (err) {
-      console.error(`[ACTIONS] Error embedding ${p.name}:`, err);
-      throw err;
-    }
+    const vector = await getEmbedding(`${p.name} ${p.specialty} ${p.registry} ${p.city}`);
+    return {
+      vector,
+      id: p.id,
+      name: p.name,
+      specialty: p.specialty,
+      registry: p.registry,
+      city: p.city,
+      status: p.status,
+      office: p.office
+    };
   }));
 
   try { await db.dropTable(TABLE_NAME); } catch (err) {}
@@ -86,11 +78,7 @@ export const server = {
       messages: z.array(z.object({ role: z.string(), content: z.string() }))
     }),
     handler: async ({ messages }) => {
-      console.log('[ACTIONS] Chat request received (Groq Engine)');
-      
-      if (!process.env.GROQ_API_KEY) {
-        return { role: 'assistant', content: '⚠️ Error: La clave GROQ_API_KEY no está configurada.' };
-      }
+      if (!process.env.GROQ_API_KEY) return { role: 'assistant', content: 'GROQ_API_KEY missing' };
 
       const lastMessage = messages[messages.length - 1].content;
       
@@ -99,34 +87,27 @@ export const server = {
         const queryVector = await getEmbedding(lastMessage);
         const results = await table.search(queryVector).limit(3).toArray();
 
-        const systemPrompt = `Eres un asistente experto de la Sociedad de Pediatría Regional Santander. Tu tono es médico, amable y formal.
-Usa EXCLUSIVAMENTE esta información de la base de datos vectorial para responder:
-${JSON.stringify(results, null, 2)}
+        const systemPrompt = `Eres el asistente de la SPCS. Datos:
+${JSON.stringify(results.map(r => ({ name: r.name, sp: r.specialty, rg: r.registry, ct: r.city })), null, 1)}
 
-REGLAS:
-1. Si el médico está en la lista, confirma con entusiasmo y da los detalles.
-2. Si no está, informa cortésmente y sugiere llamar al +57 318 8017142.
-3. No inventes médicos ni información fuera de la lista provista.
-4. Responde siempre en español.`;
+Reglas: Sé breve. Confirma si está o sugiere llamar al +57 318 8017142.`;
 
         const chatCompletion = await groq.chat.completions.create({
           messages: [
             { role: "system", content: systemPrompt },
             ...messages.map(m => ({
-              role: (m.role === 'assistant' ? 'assistant' : 'user') as "assistant" | "user" | "system",
-              content: m.content
+              role: (m.role === 'assistant' ? 'assistant' : 'user') as "assistant" | "user",
+              content: m.content.substring(0, 500) // Truncate history to save tokens
             }))
           ],
           model: CHAT_MODEL,
           temperature: 0.2,
+          max_tokens: 400,
         });
 
-        const responseContent = chatCompletion.choices[0]?.message?.content || "No pude generar una respuesta.";
-        console.log('[ACTIONS] Groq response generated.');
-        return { role: 'assistant', content: responseContent };
+        return { role: 'assistant', content: chatCompletion.choices[0]?.message?.content || "" };
       } catch (error: any) {
-        console.error('[ACTIONS] Error:', error);
-        return { role: 'assistant', content: 'Error en el motor de IA: ' + error.message };
+        return { role: 'assistant', content: 'Error: ' + error.message };
       }
     }
   }),

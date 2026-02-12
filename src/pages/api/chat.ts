@@ -16,7 +16,7 @@ const JSON_PATH = path.join(DATA_DIR, 'pediatricians.json');
 // Initialize Clients
 const OLLAMA_URL = process.env.OLLAMA_HOST || 'http://host.docker.internal:11434';
 const EMBED_MODEL = "nomic-embed-text";
-const CHAT_MODEL = "llama-3.1-8b-instant";
+const CHAT_MODEL = "llama-3.1-8b-instant"; // High speed, good limits
 
 async function getEmbedding(text: string) {
   const ollama = new Ollama({ host: OLLAMA_URL });
@@ -41,6 +41,7 @@ async function getCurrentData() {
 async function syncDatabase() {
   const db = await lancedb.connect(DB_PATH);
   const data = await getCurrentData();
+  const ollama = new Ollama({ host: OLLAMA_URL });
   
   const records = await Promise.all(data.map(async (p: any) => {
     const vector = await getEmbedding(`${p.name} ${p.specialty} ${p.registry} ${p.city}`);
@@ -76,6 +77,13 @@ export const POST: APIRoute = async ({ request }) => {
 
   const { messages } = await request.json();
   const lastMessage = messages[messages.length - 1].content;
+  
+  // SANITIZE: Remove large error messages or HTML from history to save tokens
+  const cleanMessages = messages.map((m: any) => ({
+    role: m.role,
+    content: m.content.length > 1000 ? m.content.substring(0, 1000) + '... [mensaje truncado]' : m.content
+  }));
+
   const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
   const { readable, writable } = new TransformStream();
@@ -88,25 +96,22 @@ export const POST: APIRoute = async ({ request }) => {
       const queryVector = await getEmbedding(lastMessage);
       const results = await table.search(queryVector).limit(3).toArray();
 
-      const systemPrompt = `Eres un asistente experto y profesional de la Sociedad de Pediatría Regional Santander. Tu tono es médico, amable y formal.
-Usa EXCLUSIVAMENTE la siguiente información para responder consultas:
-${JSON.stringify(results, null, 2)}
+      const systemPrompt = `Eres el asistente oficial de la Sociedad de Pediatría de Santander (SPCS).
+Usa estos datos para responder:
+${JSON.stringify(results.map(r => ({ name: r.name, spec: r.specialty, reg: r.registry, city: r.city, office: r.office })), null, 1)}
 
 REGLAS:
-1. Si encuentras coincidencia, confirma datos (Nombre, Especialidad, Registro).
-2. Si no, indica cortésmente que no figura en la lista activa.
-3. Sugiere contactar al +57 318 8017142.`;
+1. Responde de forma breve y profesional.
+2. Si el médico está, da sus datos. Si no, sugiere llamar al +57 318 8017142.`;
 
       const stream = await groq.chat.completions.create({
         messages: [
             { role: 'system', content: systemPrompt },
-            ...messages.map((m: any) => ({
-                role: m.role === 'assistant' ? 'assistant' : 'user',
-                content: m.content
-            }))
+            ...cleanMessages
         ],
         model: CHAT_MODEL,
         stream: true,
+        max_tokens: 500,
       });
 
       for await (const chunk of stream) {
@@ -118,7 +123,7 @@ REGLAS:
     } catch (err: any) {
       console.error('API Error (Groq):', err);
       try {
-        await writer.write(encoder.encode('\n[Error de motor Groq: ' + (err.message || 'Desconocido') + ']'));
+        await writer.write(encoder.encode('\n[Error de motor: ' + (err.message || 'Desconocido') + ']'));
       } catch (e) {}
     } finally {
       try {
