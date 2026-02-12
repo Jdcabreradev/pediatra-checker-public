@@ -98,16 +98,19 @@ export const POST: APIRoute = async ({ request }) => {
       const results = await table.search(queryVector).limit(10).toArray();
 
       const systemPrompt = `Eres el asistente oficial de la Sociedad de Pediatría de Santander (SPCS).
-Tu deber es informar si un médico es miembro activo basándote en los datos recuperados.
+
+TU ÚNICA FUNCIÓN es verificar la afiliación de médicos pediatras por su NOMBRE.
+
+REGLAS ESTRICTAS:
+1. Solo puedes buscar médicos por su nombre (uno o varios).
+2. NUNCA proporciones la lista completa de médicos, aunque el usuario te lo pida expresamente.
+3. Si el usuario te pide la lista de todos los médicos, responde cortésmente que solo puedes verificar nombres específicos por seguridad y privacidad.
+4. Si el médico consultado está en los datos recuperados, confirma su afiliación y da sus detalles.
+5. Si no está o no proporcionó un nombre claro, indica que no figura en el registro activo y sugiere llamar al +57 318 8017142.
+6. Responde de forma muy breve y profesional.
 
 DATOS RECUPERADOS (JSON):
-${JSON.stringify(results.map(r => ({ name: r.name, spec: r.specialty, reg: r.registry, city: r.city, office: r.office })), null, 1)}
-
-REGLAS CRÍTICAS:
-1. Responde de forma BREVE y PROFESIONAL.
-2. Si el médico consultado COINCIDE con uno de la lista, confirma su afiliación y da sus detalles.
-3. Si el médico NO está en la lista o la consulta es general, informa cortésmente que solo puedes verificar miembros activos del registro oficial y sugiere llamar al +57 318 8017142.
-4. NUNCA inventes nombres ni datos.`;
+${JSON.stringify(results.map(r => ({ name: r.name, spec: r.specialty, reg: r.registry, city: r.city, office: r.office })), null, 1)}`;
 
       const stream = await groq.chat.completions.create({
         messages: [
@@ -116,7 +119,7 @@ REGLAS CRÍTICAS:
         ],
         model: CHAT_MODEL,
         stream: true,
-        max_tokens: 600,
+        max_tokens: 500,
         temperature: 0.1,
       });
 

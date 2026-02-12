@@ -26,8 +26,10 @@ const ChatInterface = () => {
 
     const userMessage = { role: 'user', content: input };
     const currentMessages = [...messages, userMessage];
-    setMessages(currentMessages);
+    
+    // Clear input IMMEDIATELY before doing anything else
     setInput('');
+    setMessages(currentMessages);
     setIsLoading(true);
 
     try {

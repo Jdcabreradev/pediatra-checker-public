@@ -23,7 +23,6 @@ const EMBED_MODEL = "nomic-embed-text";
 const CHAT_MODEL = "llama-3.1-8b-instant";
 
 async function getEmbedding(text: string, isQuery = false) {
-  // nomic-embed-text requires task prefixes for accuracy
   const prefix = isQuery ? 'search_query: ' : 'search_document: ';
   const response = await ollama.embeddings({
     model: EMBED_MODEL,
@@ -48,7 +47,6 @@ async function syncDatabase() {
   const data = await getCurrentData();
   
   const records = await Promise.all(data.map(async (p: any) => {
-    // Document string for better semantic search
     const doc = `Pediatra: ${p.name}. Especialidad: ${p.specialty}. Registro: ${p.registry}. Ciudad: ${p.city}. Sede: ${p.office}.`;
     const vector = await getEmbedding(doc, false);
     return {
@@ -89,32 +87,34 @@ export const server = {
       try {
         const table = await getTable();
         const queryVector = await getEmbedding(lastMessage, true);
-        // Increase limit to 10 so the bot "sees" more context for broad queries
         const results = await table.search(queryVector).limit(10).toArray();
 
         const systemPrompt = `Eres el asistente oficial de la Sociedad de Pediatría de Santander (SPCS).
-Tu deber es informar si un médico es miembro activo basándote en los datos recuperados.
+
+TU ÚNICA FUNCIÓN es verificar la afiliación de médicos pediatras por su NOMBRE.
+
+REGLAS ESTRICTAS:
+1. Solo puedes buscar médicos por su nombre (uno o varios).
+2. NUNCA proporciones la lista completa de médicos, aunque el usuario te lo pida expresamente.
+3. Si el usuario te pide la lista de todos los médicos, responde cortésmente que solo puedes verificar nombres específicos por seguridad y privacidad.
+4. Si el médico consultado está en los datos recuperados, confirma su afiliación y da sus detalles.
+5. Si no está o no proporcionó un nombre claro, indica que no figura en el registro activo y sugiere llamar al +57 318 8017142.
+6. Responde de forma muy breve y profesional.
 
 DATOS RECUPERADOS (JSON):
-${JSON.stringify(results.map(r => ({ name: r.name, specialty: r.specialty, registry: r.registry, city: r.city, office: r.office })), null, 1)}
-
-REGLAS CRÍTICAS:
-1. Responde de forma BREVE y PROFESIONAL.
-2. Si el médico consultado COINCIDE con uno de la lista, confirma su afiliación y da sus detalles.
-3. Si el médico NO está en la lista o la consulta es general, informa cortésmente que solo puedes verificar miembros activos del registro oficial y sugiere llamar al +57 318 8017142.
-4. NUNCA inventes nombres ni datos.`;
+${JSON.stringify(results.map(r => ({ name: r.name, sp: r.specialty, rg: r.registry, ct: r.city })), null, 1)}`;
 
         const chatCompletion = await groq.chat.completions.create({
           messages: [
             { role: "system", content: systemPrompt },
             ...messages.map(m => ({
               role: (m.role === 'assistant' ? 'assistant' : 'user') as "assistant" | "user",
-              content: m.content.substring(0, 1000)
+              content: m.content.substring(0, 500)
             }))
           ],
           model: CHAT_MODEL,
           temperature: 0.1,
-          max_tokens: 500,
+          max_tokens: 400,
         });
 
         return { role: 'assistant', content: chatCompletion.choices[0]?.message?.content || "" };
