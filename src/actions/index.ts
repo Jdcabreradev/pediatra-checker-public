@@ -15,11 +15,16 @@ const JSON_PATH = path.join(DATA_DIR, 'pediatricians.json');
 
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const EMBED_MODEL = "text-embedding-004"; // Stable embedding model
+const CHAT_MODEL = "gemini-1.5-flash";
 
 // Helper to get embeddings from Gemini
 async function getEmbedding(text: string) {
+  console.log(`[ACTIONS] Embedding text: ${text.substring(0, 30)}...`);
   if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY no configurada');
-  const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
+  
+  // Use the correct model name
+  const model = genAI.getGenerativeModel({ model: EMBED_MODEL });
   const result = await model.embedContent(text);
   return result.embedding.values;
 }
@@ -36,22 +41,27 @@ async function getCurrentData() {
 }
 
 async function syncDatabase() {
-  console.log('RAG: Syncing with Gemini Embeddings...');
+  console.log('[ACTIONS] Syncing with Gemini Embeddings...');
   const db = await lancedb.connect(DB_PATH);
   const data = await getCurrentData();
   
   const records = await Promise.all(data.map(async (p: any) => {
-    const vector = await getEmbedding(`${p.name} ${p.specialty} ${p.registry} ${p.city}`);
-    return {
-      vector,
-      id: p.id,
-      name: p.name,
-      specialty: p.specialty,
-      registry: p.registry,
-      city: p.city,
-      status: p.status,
-      office: p.office
-    };
+    try {
+      const vector = await getEmbedding(`${p.name} ${p.specialty} ${p.registry} ${p.city}`);
+      return {
+        vector,
+        id: p.id,
+        name: p.name,
+        specialty: p.specialty,
+        registry: p.registry,
+        city: p.city,
+        status: p.status,
+        office: p.office
+      };
+    } catch (err) {
+      console.error(`[ACTIONS] Error embedding ${p.name}:`, err);
+      throw err;
+    }
   }));
 
   try { await db.dropTable(TABLE_NAME); } catch (err) {}
@@ -73,8 +83,9 @@ export const server = {
       messages: z.array(z.object({ role: z.string(), content: z.string() }))
     }),
     handler: async ({ messages }) => {
+      console.log('[ACTIONS] Chat request received');
       if (!process.env.GEMINI_API_KEY) {
-        return { role: 'assistant', content: '⚠️ Error: La clave GEMINI_API_KEY no está configurada en el servidor. Por favor, proporciónala para activar el chat.' };
+        return { role: 'assistant', content: '⚠️ Error: La clave GEMINI_API_KEY no está configurada.' };
       }
 
       const lastMessage = messages[messages.length - 1].content;
@@ -93,7 +104,7 @@ REGLAS:
 2. Si no está, informa cortésmente y sugiere llamar al +57 318 8017142.
 3. No inventes médicos.`;
 
-        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const model = genAI.getGenerativeModel({ model: CHAT_MODEL });
         const chat = model.startChat({
           history: [
             { role: "user", parts: [{ text: systemPrompt }] },
@@ -108,7 +119,7 @@ REGLAS:
         const result = await chat.sendMessage(lastMessage);
         return { role: 'assistant', content: result.response.text() };
       } catch (error: any) {
-        console.error('Gemini Error:', error);
+        console.error('[ACTIONS] Gemini Error:', error);
         return { role: 'assistant', content: 'Error de IA: ' + error.message };
       }
     }

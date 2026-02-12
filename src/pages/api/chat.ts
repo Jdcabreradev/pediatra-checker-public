@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { Ollama } from 'ollama';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import * as lancedb from '@lancedb/lancedb';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -12,9 +12,17 @@ const DB_PATH = path.join(DATA_DIR, 'lancedb');
 const TABLE_NAME = 'pediatricians';
 const JSON_PATH = path.join(DATA_DIR, 'pediatricians.json');
 
-const OLLAMA_URL = process.env.OLLAMA_HOST || 'http://host.docker.internal:11434';
-const CHAT_MODEL = 'llama3.2:1b';
-const EMBED_MODEL = 'nomic-embed-text';
+// Initialize Gemini
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
+const EMBED_MODEL = "text-embedding-004";
+const CHAT_MODEL = "gemini-1.5-flash";
+
+async function getEmbedding(text: string) {
+  console.log(`[API] Embedding text: ${text.substring(0, 30)}...`);
+  const model = genAI.getGenerativeModel({ model: EMBED_MODEL });
+  const result = await model.embedContent(text);
+  return result.embedding.values;
+}
 
 async function getCurrentData() {
   try {
@@ -28,26 +36,27 @@ async function getCurrentData() {
 }
 
 async function syncDatabase() {
-  console.log('API: Syncing database...');
+  console.log('[API] Syncing database with Gemini...');
   const db = await lancedb.connect(DB_PATH);
   const data = await getCurrentData();
-  const ollama = new Ollama({ host: OLLAMA_URL });
   
   const records = await Promise.all(data.map(async (p: any) => {
-    const resp = await ollama.embeddings({
-      model: EMBED_MODEL,
-      prompt: `${p.name} ${p.specialty} ${p.registry} ${p.city}`,
-    });
-    return {
-      vector: resp.embedding,
-      id: p.id,
-      name: p.name,
-      specialty: p.specialty,
-      registry: p.registry,
-      city: p.city,
-      status: p.status,
-      office: p.office
-    };
+    try {
+      const vector = await getEmbedding(`${p.name} ${p.specialty} ${p.registry} ${p.city}`);
+      return {
+        vector,
+        id: p.id,
+        name: p.name,
+        specialty: p.specialty,
+        registry: p.registry,
+        city: p.city,
+        status: p.status,
+        office: p.office
+      };
+    } catch (err) {
+      console.error(`[API] Error embedding ${p.name}:`, err);
+      throw err;
+    }
   }));
 
   try { await db.dropTable(TABLE_NAME); } catch (err) {}
@@ -64,22 +73,23 @@ async function getTable() {
 }
 
 export const POST: APIRoute = async ({ request }) => {
-  console.log('API: Chat request received');
+  console.log('[API] Chat request received');
+  if (!process.env.GEMINI_API_KEY) {
+      return new Response('GEMINI_API_KEY not set', { status: 500 });
+  }
+
   const { messages } = await request.json();
   const lastMessage = messages[messages.length - 1].content;
-  const ollama = new Ollama({ host: OLLAMA_URL });
 
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
   const encoder = new TextEncoder();
 
-  // Handle the streaming in a way that doesn't crash if the connection closes
   (async () => {
     try {
-      console.log('API: Getting context...');
       const table = await getTable();
-      const queryResp = await ollama.embeddings({ model: EMBED_MODEL, prompt: lastMessage });
-      const results = await table.search(queryResp.embedding).limit(3).toArray();
+      const queryVector = await getEmbedding(lastMessage);
+      const results = await table.search(queryVector).limit(3).toArray();
 
       const systemPrompt = `Eres un asistente experto y profesional de la Sociedad de Pediatría Regional Santander. Tu tono es médico, amable y formal.
 Usa EXCLUSIVAMENTE la siguiente información para responder consultas:
@@ -90,24 +100,29 @@ REGLAS:
 2. Si no, indica cortésmente que no figura en la lista activa.
 3. Sugiere contactar al +57 318 8017142.`;
 
-      console.log('API: Starting Ollama stream...');
-      const response = await ollama.chat({
-        model: CHAT_MODEL,
-        messages: [{ role: 'system', content: systemPrompt }, ...messages],
-        stream: true,
+      const model = genAI.getGenerativeModel({ model: CHAT_MODEL });
+      const result = await model.generateContentStream({
+        contents: [
+            { role: 'user', parts: [{ text: systemPrompt }] },
+            { role: 'model', parts: [{ text: 'Entendido. Consultaré el registro oficial.' }] },
+            ...messages.map((m: any) => ({
+                role: m.role === 'assistant' ? 'model' : 'user',
+                parts: [{ text: m.content }]
+            }))
+        ],
       });
 
-      for await (const part of response) {
-        if (part.message.content) {
-          await writer.write(encoder.encode(part.message.content));
+      for await (const chunk of result.stream) {
+        const chunkText = chunk.text();
+        if (chunkText) {
+          await writer.write(encoder.encode(chunkText));
         }
       }
-      console.log('API: Stream finished normally');
+      console.log('[API] Stream finished normally');
     } catch (err: any) {
-      console.error('API Error:', err);
-      // Only try to write error if the stream is still open
+      console.error('[API] Error:', err);
       try {
-        await writer.write(encoder.encode('\n[Error del sistema: ' + (err.message || 'Desconocido') + ']'));
+        await writer.write(encoder.encode('\n[Error: ' + (err.message || 'Desconocido') + ']'));
       } catch (e) {}
     } finally {
       try {
