@@ -37,10 +37,10 @@ const ChatInterface = () => {
       } else if (data) {
           setMessages(prev => [...prev, data]);
       }
-    } catch (e) {
+    } catch (e: any) {
       setMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: 'Error de red. Por favor, verifica tu conexión y vuelve a intentarlo.' 
+        content: 'Error de red: ' + e.message 
       }]);
     } finally {
       setIsLoading(false);
@@ -48,56 +48,60 @@ const ChatInterface = () => {
   };
 
   return (
-    <div className="flex flex-col h-full w-full bg-white relative overflow-hidden">
+    <div className="flex flex-col h-full w-full bg-[#0f172a] relative overflow-hidden">
       {/* Chat Messages */}
-      <div className="flex-grow overflow-y-auto p-4 md:p-8 space-y-6 md:space-y-8 bg-slate-50/30 custom-scrollbar relative">
-        {messages.map((m, i) => (
-          <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
-            <div className={`flex gap-3 md:gap-4 max-w-[95%] md:max-w-[85%] ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
-              <div className={`mt-1 p-2 rounded-lg flex-shrink-0 shadow-sm ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-400 border border-slate-100'}`}>
-                {m.role === 'user' ? <User size={14} /> : <Bot size={14} />}
-              </div>
-              <div className={`p-3 md:p-4 rounded-2xl shadow-sm relative text-left ${
-                m.role === 'user' 
-                  ? 'bg-indigo-600 text-white rounded-tr-none' 
-                  : 'bg-white text-slate-800 border border-slate-100 rounded-tl-none'
-              }`}>
-                <p className="text-sm md:text-base leading-relaxed font-medium">{m.content}</p>
-              </div>
+      <div className="flex-grow overflow-y-auto p-4 md:p-8 space-y-6 md:space-y-8 bg-[#0f172a] custom-scrollbar relative">
+        <div className="max-w-4xl mx-auto space-y-6 md:space-y-8">
+            {messages.map((m, i) => (
+            <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
+                <div className={`flex gap-3 md:gap-4 max-w-[95%] md:max-w-[85%] ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                <div className={`mt-1 p-2 rounded-lg flex-shrink-0 shadow-sm ${m.role === 'user' ? 'bg-indigo-500 text-white' : 'bg-[#1e293b] text-indigo-400 border border-[#334155]'}`}>
+                    {m.role === 'user' ? <User size={14} /> : <Bot size={14} />}
+                </div>
+                <div className={`p-3 md:p-4 rounded-2xl shadow-lg relative text-left ${
+                    m.role === 'user' 
+                    ? 'bg-indigo-500 text-white rounded-tr-none' 
+                    : 'bg-[#1e293b] text-slate-200 border border-[#334155] rounded-tl-none'
+                }`}>
+                    <p className="text-sm md:text-base leading-relaxed font-medium">{m.content}</p>
+                </div>
+                </div>
             </div>
-          </div>
-        ))}
-        
-        {isLoading && (
-          <div className="flex justify-start">
-            <div className="flex gap-3 md:gap-4 max-w-[85%]">
-              <div className="mt-1 p-2 rounded-lg bg-white text-indigo-600 border border-slate-100 shadow-sm">
-                <Spinner size={16} />
-              </div>
-              <div className="p-3 md:p-4 rounded-2xl bg-white text-slate-400 border border-slate-100 rounded-tl-none italic text-xs flex items-center">
-                Consultando base de datos...
-              </div>
+            ))}
+            
+            {isLoading && (
+            <div className="flex justify-start animate-pulse">
+                <div className="flex gap-3 md:gap-4 max-w-[85%]">
+                <div className="mt-1 p-2 rounded-lg bg-[#1e293b] text-indigo-400 border border-[#334155]">
+                    <Spinner size={16} />
+                </div>
+                <div className="p-3 md:p-4 rounded-2xl bg-[#1e293b] text-slate-400 border border-[#334155] rounded-tl-none italic text-xs flex items-center">
+                    Consultando registros oficiales...
+                </div>
+                </div>
             </div>
-          </div>
-        )}
-        <div ref={messagesEndRef} />
+            )}
+            <div ref={messagesEndRef} />
+        </div>
       </div>
 
-      {/* Chat Input */}
-      <div className="p-3 md:p-6 bg-white border-t border-slate-100 relative flex-shrink-0">
-        <form onSubmit={handleSend} className="flex gap-2 items-center max-w-4xl mx-auto">
+      {/* Chat Input Area - Pinned to bottom */}
+      <div className="p-4 md:p-6 bg-[#1e293b] border-t border-[#334155] relative flex-shrink-0 shadow-2xl">
+        <form onSubmit={handleSend} className="flex gap-3 items-center max-w-4xl mx-auto w-full">
             <div className="flex-grow">
                 <Input 
-                    placeholder="Escribe el nombre del pediatra..."
+                    placeholder="Escriba el nombre o registro del médico..."
                     value={input}
                     onChange={(e: any) => setInput(e.target.value)}
                     disabled={isLoading}
+                    className="w-full bg-[#0f172a] border-[#475569] text-white"
                 />
             </div>
             <Button 
                 theme="info"
                 type="submit"
                 disabled={!input.trim() || isLoading}
+                className="bg-indigo-500 hover:bg-indigo-600 border-none h-[42px] px-6"
             >
                 {isLoading ? <Spinner size={18} color="white" /> : <Send size={18} />}
             </Button>
