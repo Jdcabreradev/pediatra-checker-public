@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, User, Bot } from 'lucide-react';
 import { actions } from 'astro:actions';
-import { Button, Input, Spinner } from 'webcoreui/react';
+import { Button, Spinner } from 'webcoreui/react';
 import ReactMarkdown from 'react-markdown';
 
 const ChatInterface = () => {
@@ -24,16 +24,16 @@ const ChatInterface = () => {
     e.preventDefault();
     if (!input.trim() || isLoading) return;
 
-    const userMessage = { role: 'user', content: input };
-    const currentMessages = [...messages, userMessage];
+    const currentInput = input;
+    const userMessage = { role: 'user', content: currentInput };
     
-    // Clear input IMMEDIATELY before doing anything else
+    // UI RESET: Clear input and update messages immediately
     setInput('');
-    setMessages(currentMessages);
+    setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
 
     try {
-      const { data, error } = await actions.chat({ messages: currentMessages });
+      const { data, error } = await actions.chat({ messages: [...messages, userMessage] });
 
       if (error) {
           setMessages(prev => [...prev, { role: 'assistant', content: 'Lo sentimos, el sistema de IA no está disponible en este momento. ' + error.message }]);
@@ -102,12 +102,13 @@ const ChatInterface = () => {
       <div className="bg-[#1e293b]/80 backdrop-blur-xl border-t border-[#334155] p-4 md:p-8 flex-shrink-0">
         <form onSubmit={handleSend} className="max-w-4xl mx-auto w-full flex gap-3 items-center">
             <div className="flex-grow relative">
-                <Input 
+                <input 
                     placeholder="Ingrese el nombre del especialista o RM..."
                     value={input}
-                    onChange={(e: any) => setInput(e.target.value)}
+                    onChange={(e) => setInput(e.target.value)}
                     disabled={isLoading}
-                    className="w-full bg-[#0f172a] border-[#475569] text-white rounded-2xl py-3.5 px-6 focus:ring-2 focus:ring-indigo-500 transition-all placeholder:text-slate-600 font-medium"
+                    autoComplete="off"
+                    className="w-full bg-[#0f172a] border border-[#475569] text-white rounded-2xl py-3.5 px-6 focus:ring-2 focus:ring-indigo-500 outline-none transition-all placeholder:text-slate-600 font-medium"
                 />
             </div>
             <Button 
