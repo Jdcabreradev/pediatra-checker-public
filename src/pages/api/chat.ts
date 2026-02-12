@@ -28,6 +28,7 @@ async function getCurrentData() {
 }
 
 async function syncDatabase() {
+  console.log('API: Syncing database...');
   const db = await lancedb.connect(DB_PATH);
   const data = await getCurrentData();
   const ollama = new Ollama({ host: OLLAMA_URL });
@@ -63,19 +64,19 @@ async function getTable() {
 }
 
 export const POST: APIRoute = async ({ request }) => {
+  console.log('API: Chat request received');
   const { messages } = await request.json();
   const lastMessage = messages[messages.length - 1].content;
   const ollama = new Ollama({ host: OLLAMA_URL });
 
-  // Create stream
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
   const encoder = new TextEncoder();
 
-  // Background process to handle Ollama and stream output
+  // Handle the streaming in a way that doesn't crash if the connection closes
   (async () => {
     try {
-      // 1. Get Context (RAG)
+      console.log('API: Getting context...');
       const table = await getTable();
       const queryResp = await ollama.embeddings({ model: EMBED_MODEL, prompt: lastMessage });
       const results = await table.search(queryResp.embedding).limit(3).toArray();
@@ -89,7 +90,7 @@ REGLAS:
 2. Si no, indica cortésmente que no figura en la lista activa.
 3. Sugiere contactar al +57 318 8017142.`;
 
-      // 2. Stream Ollama Response
+      console.log('API: Starting Ollama stream...');
       const response = await ollama.chat({
         model: CHAT_MODEL,
         messages: [{ role: 'system', content: systemPrompt }, ...messages],
@@ -101,17 +102,23 @@ REGLAS:
           await writer.write(encoder.encode(part.message.content));
         }
       }
+      console.log('API: Stream finished normally');
     } catch (err: any) {
       console.error('API Error:', err);
-      await writer.write(encoder.encode('Error: ' + err.message));
+      // Only try to write error if the stream is still open
+      try {
+        await writer.write(encoder.encode('\n[Error del sistema: ' + (err.message || 'Desconocido') + ']'));
+      } catch (e) {}
     } finally {
-      await writer.close();
+      try {
+        await writer.close();
+      } catch (e) {}
     }
   })();
 
   return new Response(readable, {
     headers: {
-      'Content-Type': 'text/event-stream',
+      'Content-Type': 'text/plain; charset=utf-8',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
     },
