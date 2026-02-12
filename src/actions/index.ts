@@ -1,11 +1,11 @@
 import { defineAction } from 'astro:actions';
 import { z } from 'astro:schema';
-import { Ollama } from 'ollama';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import * as lancedb from '@lancedb/lancedb';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-// Initial data imported at build time
+// Initial data
 import initialData from '../data/pediatricians.json';
 
 const DATA_DIR = path.resolve(process.cwd(), 'data');
@@ -13,41 +13,34 @@ const DB_PATH = path.join(DATA_DIR, 'lancedb');
 const TABLE_NAME = 'pediatricians';
 const JSON_PATH = path.join(DATA_DIR, 'pediatricians.json');
 
-const OLLAMA_URL = process.env.OLLAMA_HOST || 'http://host.docker.internal:11434';
-const EMBED_MODEL = 'nomic-embed-text';
-const CHAT_MODEL = 'llama3.2:1b'; // Using 1B for faster CPU response
+// Initialize Gemini
+const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
-// Helper to get embeddings from Ollama
+// Helper to get embeddings from Gemini
 async function getEmbedding(text: string) {
-  const ollama = new Ollama({ host: OLLAMA_URL });
-  const response = await ollama.embeddings({
-    model: EMBED_MODEL,
-    prompt: text,
-  });
-  return response.embedding;
+  if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY no configurada');
+  const model = genAI.getGenerativeModel({ model: "text-embedding-004" });
+  const result = await model.embedContent(text);
+  return result.embedding.values;
 }
 
-// Get current data (from file or fallback to initial)
 async function getCurrentData() {
   try {
     const data = await fs.readFile(JSON_PATH, 'utf-8');
     return JSON.parse(data);
   } catch (e) {
-    console.log('JSON not found, creating from initial data...');
     await fs.mkdir(DATA_DIR, { recursive: true });
     await fs.writeFile(JSON_PATH, JSON.stringify(initialData, null, 2));
     return initialData;
   }
 }
 
-// Sync JSON to LanceDB
 async function syncDatabase() {
-  console.log('Starting database sync...');
+  console.log('RAG: Syncing with Gemini Embeddings...');
   const db = await lancedb.connect(DB_PATH);
   const data = await getCurrentData();
   
   const records = await Promise.all(data.map(async (p: any) => {
-    console.log(`Generating embedding for ${p.name}...`);
     const vector = await getEmbedding(`${p.name} ${p.specialty} ${p.registry} ${p.city}`);
     return {
       vector,
@@ -61,22 +54,15 @@ async function syncDatabase() {
     };
   }));
 
-  try {
-    await db.dropTable(TABLE_NAME);
-  } catch (e) {}
-  
-  const table = await db.createTable(TABLE_NAME, records);
-  console.log('Database sync complete.');
-  return table;
+  try { await db.dropTable(TABLE_NAME); } catch (err) {}
+  return await db.createTable(TABLE_NAME, records);
 }
 
-// Helper to get table, auto-initializing if needed
 async function getTable() {
   const db = await lancedb.connect(DB_PATH);
   try {
     return await db.openTable(TABLE_NAME);
   } catch (e) {
-    console.log('Table not found, initializing...');
     return await syncDatabase();
   }
 }
@@ -87,47 +73,43 @@ export const server = {
       messages: z.array(z.object({ role: z.string(), content: z.string() }))
     }),
     handler: async ({ messages }) => {
+      if (!process.env.GEMINI_API_KEY) {
+        return { role: 'assistant', content: '⚠️ Error: La clave GEMINI_API_KEY no está configurada en el servidor. Por favor, proporciónala para activar el chat.' };
+      }
+
       const lastMessage = messages[messages.length - 1].content;
-      const ollama = new Ollama({ host: OLLAMA_URL });
-      
-      console.log(`Chat request: "${lastMessage}"`);
       
       try {
         const table = await getTable();
-        
-        console.log('Generating query embedding...');
         const queryVector = await getEmbedding(lastMessage);
-        
-        console.log('Searching vector database...');
         const results = await table.search(queryVector).limit(3).toArray();
 
-        const systemPrompt = `Eres un asistente experto y profesional de la Sociedad de Pediatría Regional Santander. Tu tono es médico, amable y formal.
-Usa EXCLUSIVAMENTE la siguiente información de afiliados recuperada de la base de datos para responder consultas sobre especialistas.
-
-CONTEXTO DE AFILIADOS RELEVANTES:
+        const systemPrompt = `Eres un asistente experto de la Sociedad de Pediatría Regional Santander. Tu tono es médico, amable y formal.
+Usa EXCLUSIVAMENTE esta información de la base de datos vectorial para responder:
 ${JSON.stringify(results, null, 2)}
 
 REGLAS:
-1. Si encuentras una coincidencia, confirma el nombre completo, especialidad, registro médico y ciudad.
-2. Si NO encuentras una coincidencia clara en la base de datos provista, indica cortésmente que el profesional no figura en el listado oficial de miembros activos.
-3. Sugiere contactar al +57 318 8017142 para más información si es necesario.
-4. No inventes información.`;
+1. Si el médico está en la lista, confirma con entusiasmo y da los detalles.
+2. Si no está, informa cortésmente y sugiere llamar al +57 318 8017142.
+3. No inventes médicos.`;
 
-        console.log('Calling Ollama chat...');
-        const response = await ollama.chat({
-          model: CHAT_MODEL,
-          messages: [{ role: 'system', content: systemPrompt }, ...messages],
-          options: {
-            temperature: 0.2,
-            num_predict: 200,
-          }
+        const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+        const chat = model.startChat({
+          history: [
+            { role: "user", parts: [{ text: systemPrompt }] },
+            { role: "model", parts: [{ text: "Entendido. Consultaré el registro oficial de la Sociedad para dar información exacta." }] },
+            ...messages.slice(0, -1).map(m => ({
+              role: m.role === 'assistant' ? 'model' : 'user',
+              parts: [{ text: m.content }]
+            }))
+          ],
         });
 
-        console.log('Response generated successfully.');
-        return { role: 'assistant', content: response.message.content };
+        const result = await chat.sendMessage(lastMessage);
+        return { role: 'assistant', content: result.response.text() };
       } catch (error: any) {
-        console.error('Chat Action Error:', error);
-        return { role: 'assistant', content: "Lo sentimos, hubo un error procesando tu consulta: " + error.message };
+        console.error('Gemini Error:', error);
+        return { role: 'assistant', content: 'Error de IA: ' + error.message };
       }
     }
   }),
