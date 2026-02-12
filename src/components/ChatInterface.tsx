@@ -1,6 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Send, User, Bot } from 'lucide-react';
-import { actions } from 'astro:actions';
 import { Button, Input, Spinner } from 'webcoreui/react';
 
 const ChatInterface = () => {
@@ -24,23 +23,42 @@ const ChatInterface = () => {
     if (!input.trim() || isLoading) return;
 
     const userMessage = { role: 'user', content: input };
-    const newMessages = [...messages, userMessage];
-    setMessages(newMessages);
+    setMessages(prev => [...prev, userMessage]);
     setInput('');
     setIsLoading(true);
 
     try {
-      const { data, error } = await actions.chat({ messages: newMessages });
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: [...messages, userMessage] }),
+      });
 
-      if (error) {
-          setMessages(prev => [...prev, { role: 'assistant', content: 'Lo sentimos, el sistema de IA no está disponible en este momento. ' + error.message }]);
-      } else if (data) {
-          setMessages(prev => [...prev, data]);
+      if (!response.ok) throw new Error('Error en la respuesta del servidor');
+
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+      let assistantMessage = { role: 'assistant', content: '' };
+      
+      setMessages(prev => [...prev, assistantMessage]);
+
+      while (true) {
+        const { done, value } = await reader!.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        assistantMessage.content += chunk;
+        
+        setMessages(prev => {
+            const updated = [...prev];
+            updated[updated.length - 1] = { ...assistantMessage };
+            return updated;
+        });
       }
     } catch (e: any) {
       setMessages(prev => [...prev, { 
         role: 'assistant', 
-        content: 'Error de red: ' + e.message 
+        content: 'Error de conexión: ' + e.message 
       }]);
     } finally {
       setIsLoading(false);
@@ -63,13 +81,13 @@ const ChatInterface = () => {
                     ? 'bg-indigo-500 text-white rounded-tr-none' 
                     : 'bg-[#1e293b] text-slate-200 border border-[#334155] rounded-tl-none'
                 }`}>
-                    <p className="text-sm md:text-base leading-relaxed font-medium">{m.content}</p>
+                    <p className="text-sm md:text-base leading-relaxed font-medium whitespace-pre-wrap">{m.content}</p>
                 </div>
                 </div>
             </div>
             ))}
             
-            {isLoading && (
+            {isLoading && !messages[messages.length - 1].content && (
             <div className="flex justify-start animate-pulse">
                 <div className="flex gap-3 md:gap-4 max-w-[85%]">
                 <div className="mt-1 p-2 rounded-lg bg-[#1e293b] text-indigo-400 border border-[#334155]">
@@ -103,7 +121,7 @@ const ChatInterface = () => {
                 disabled={!input.trim() || isLoading}
                 className="bg-indigo-500 hover:bg-indigo-600 border-none h-[42px] px-6"
             >
-                {isLoading ? <Spinner size={18} color="white" /> : <Send size={18} />}
+                {isLoading && !messages[messages.length - 1].content ? <Spinner size={18} color="white" /> : <Send size={18} />}
             </Button>
         </form>
       </div>
