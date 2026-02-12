@@ -16,13 +16,14 @@ const JSON_PATH = path.join(DATA_DIR, 'pediatricians.json');
 // Initialize Clients
 const OLLAMA_URL = process.env.OLLAMA_HOST || 'http://host.docker.internal:11434';
 const EMBED_MODEL = "nomic-embed-text";
-const CHAT_MODEL = "llama-3.1-8b-instant"; // High speed, good limits
+const CHAT_MODEL = "llama-3.1-8b-instant";
 
-async function getEmbedding(text: string) {
+async function getEmbedding(text: string, isQuery = false) {
   const ollama = new Ollama({ host: OLLAMA_URL });
+  const prefix = isQuery ? 'search_query: ' : 'search_document: ';
   const response = await ollama.embeddings({
     model: EMBED_MODEL,
-    prompt: text,
+    prompt: prefix + text,
   });
   return response.embedding;
 }
@@ -44,7 +45,8 @@ async function syncDatabase() {
   const ollama = new Ollama({ host: OLLAMA_URL });
   
   const records = await Promise.all(data.map(async (p: any) => {
-    const vector = await getEmbedding(`${p.name} ${p.specialty} ${p.registry} ${p.city}`);
+    const doc = `Pediatra: ${p.name}. Especialidad: ${p.specialty}. Registro: ${p.registry}. Ciudad: ${p.city}. Sede: ${p.office}.`;
+    const vector = await getEmbedding(doc, false);
     return {
       vector,
       id: p.id,
@@ -78,10 +80,9 @@ export const POST: APIRoute = async ({ request }) => {
   const { messages } = await request.json();
   const lastMessage = messages[messages.length - 1].content;
   
-  // SANITIZE: Remove large error messages or HTML from history to save tokens
   const cleanMessages = messages.map((m: any) => ({
-    role: m.role,
-    content: m.content.length > 1000 ? m.content.substring(0, 1000) + '... [mensaje truncado]' : m.content
+    role: m.role === 'assistant' ? 'assistant' : 'user',
+    content: m.content.substring(0, 1000)
   }));
 
   const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -93,16 +94,20 @@ export const POST: APIRoute = async ({ request }) => {
   (async () => {
     try {
       const table = await getTable();
-      const queryVector = await getEmbedding(lastMessage);
-      const results = await table.search(queryVector).limit(3).toArray();
+      const queryVector = await getEmbedding(lastMessage, true);
+      const results = await table.search(queryVector).limit(10).toArray();
 
       const systemPrompt = `Eres el asistente oficial de la Sociedad de Pediatría de Santander (SPCS).
-Usa estos datos para responder:
+Tu deber es informar si un médico es miembro activo basándote en los datos recuperados.
+
+DATOS RECUPERADOS (JSON):
 ${JSON.stringify(results.map(r => ({ name: r.name, spec: r.specialty, reg: r.registry, city: r.city, office: r.office })), null, 1)}
 
-REGLAS:
-1. Responde de forma breve y profesional.
-2. Si el médico está, da sus datos. Si no, sugiere llamar al +57 318 8017142.`;
+REGLAS CRÍTICAS:
+1. Responde de forma BREVE y PROFESIONAL.
+2. Si el médico consultado COINCIDE con uno de la lista, confirma su afiliación y da sus detalles.
+3. Si el médico NO está en la lista o la consulta es general, informa cortésmente que solo puedes verificar miembros activos del registro oficial y sugiere llamar al +57 318 8017142.
+4. NUNCA inventes nombres ni datos.`;
 
       const stream = await groq.chat.completions.create({
         messages: [
@@ -111,7 +116,8 @@ REGLAS:
         ],
         model: CHAT_MODEL,
         stream: true,
-        max_tokens: 500,
+        max_tokens: 600,
+        temperature: 0.1,
       });
 
       for await (const chunk of stream) {
