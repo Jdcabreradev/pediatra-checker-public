@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { Send, User, Bot } from 'lucide-react';
 import { actions } from 'astro:actions';
 import { Button, Input, Spinner } from 'webcoreui/react';
+import ReactMarkdown from 'react-markdown';
 
 const ChatInterface = () => {
   const [messages, setMessages] = useState([
@@ -54,7 +55,7 @@ const ChatInterface = () => {
         <div className="max-w-4xl mx-auto space-y-8">
             {messages.map((m, i) => (
             <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
-                <div className={`flex gap-4 max-w-[90%] md:max-w-[80%] ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
+                <div className={`flex gap-4 max-w-[90%] md:max-w-[80%] items-start ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
                 <div className={`mt-1.5 p-2 rounded-xl flex-shrink-0 shadow-lg ${m.role === 'user' ? 'bg-indigo-600 text-white' : 'bg-[#1e293b] text-indigo-400 border border-[#334155]'}`}>
                     {m.role === 'user' ? <User size={16} strokeWidth={2.5} /> : <Bot size={16} strokeWidth={2.5} />}
                 </div>
@@ -63,7 +64,17 @@ const ChatInterface = () => {
                     ? 'bg-indigo-600 text-white rounded-tr-none' 
                     : 'bg-[#1e293b] text-slate-200 border border-[#334155] rounded-tl-none'
                 }`}>
-                    <p className="text-sm md:text-base font-medium">{m.content}</p>
+                    <div className="text-sm md:text-base font-medium prose prose-invert prose-sm max-w-none">
+                        <ReactMarkdown
+                            components={{
+                                ul: ({node, ...props}) => <ul className="list-disc pl-4 space-y-1 my-2" {...props} />,
+                                li: ({node, ...props}) => <li className="pl-1" {...props} />,
+                                p: ({node, ...props}) => <p className="mb-2 last:mb-0" {...props} />
+                            }}
+                        >
+                            {m.content}
+                        </ReactMarkdown>
+                    </div>
                 </div>
                 </div>
             </div>
@@ -71,7 +82,7 @@ const ChatInterface = () => {
             
             {isLoading && (
             <div className="flex justify-start animate-pulse">
-                <div className="flex gap-4 max-w-[80%]">
+                <div className="flex gap-4 max-w-[80%] items-start">
                 <div className="mt-1.5 p-2 rounded-xl bg-[#1e293b] text-indigo-400 border border-[#334155]">
                     <Spinner size={16} />
                 </div>
