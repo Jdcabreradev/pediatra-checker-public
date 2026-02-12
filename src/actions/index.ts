@@ -20,7 +20,7 @@ const ollama = new Ollama({ host: process.env.OLLAMA_HOST || 'http://host.docker
 
 // Models
 const EMBED_MODEL = "nomic-embed-text";
-const CHAT_MODEL = "llama-3.3-70b-versatile";
+const CHAT_MODEL = "llama-3.1-8b-instant";
 
 // Helper to get embeddings from local Ollama (Free & Offline)
 async function getEmbedding(text: string) {

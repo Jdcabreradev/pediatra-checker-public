@@ -16,7 +16,7 @@ const JSON_PATH = path.join(DATA_DIR, 'pediatricians.json');
 // Initialize Clients
 const OLLAMA_URL = process.env.OLLAMA_HOST || 'http://host.docker.internal:11434';
 const EMBED_MODEL = "nomic-embed-text";
-const CHAT_MODEL = "llama-3.3-70b-versatile";
+const CHAT_MODEL = "llama-3.1-8b-instant";
 
 async function getEmbedding(text: string) {
   const ollama = new Ollama({ host: OLLAMA_URL });
