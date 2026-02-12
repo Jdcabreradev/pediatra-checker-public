@@ -13,17 +13,15 @@ const DB_PATH = path.join(DATA_DIR, 'lancedb');
 const TABLE_NAME = 'pediatricians';
 const JSON_PATH = path.join(DATA_DIR, 'pediatricians.json');
 
-// Initialize Ollama with explicit host from env
-const getOllama = () => new Ollama({ 
-  host: process.env.OLLAMA_HOST || 'http://host.docker.internal:11434' 
-});
+const OLLAMA_URL = process.env.OLLAMA_HOST || 'http://host.docker.internal:11434';
+const EMBED_MODEL = 'nomic-embed-text';
+const CHAT_MODEL = 'llama3.2:1b'; // Using 1B for faster CPU response
 
-// Helper to get embeddings from Ollama (SEQUENTIAL to avoid timeouts)
+// Helper to get embeddings from Ollama
 async function getEmbedding(text: string) {
-  const ollama = getOllama();
-  // Set a longer timeout if possible, but sequential calls usually fix the load issue
+  const ollama = new Ollama({ host: OLLAMA_URL });
   const response = await ollama.embeddings({
-    model: 'nomic-embed-text',
+    model: EMBED_MODEL,
     prompt: text,
   });
   return response.embedding;
@@ -35,6 +33,7 @@ async function getCurrentData() {
     const data = await fs.readFile(JSON_PATH, 'utf-8');
     return JSON.parse(data);
   } catch (e) {
+    console.log('JSON not found, creating from initial data...');
     await fs.mkdir(DATA_DIR, { recursive: true });
     await fs.writeFile(JSON_PATH, JSON.stringify(initialData, null, 2));
     return initialData;
@@ -47,51 +46,39 @@ async function syncDatabase() {
   const db = await lancedb.connect(DB_PATH);
   const data = await getCurrentData();
   
-  const records = [];
-  // Use sequential loop to prevent Ollama overload/timeouts
-  for (const p of data) {
-    try {
-      console.log(`Generating embedding for ${p.name}...`);
-      const vector = await getEmbedding(`${p.name} ${p.specialty} ${p.registry} ${p.city}`);
-      records.push({
-        vector,
-        id: p.id,
-        name: p.name,
-        specialty: p.specialty,
-        registry: p.registry,
-        city: p.city,
-        status: p.status,
-        office: p.office
-      });
-    } catch (e) {
-      console.error(`Failed to generate embedding for ${p.name}:`, e);
-    }
-  }
-
-  if (records.length === 0) {
-    console.error('No records to insert. Aborting table creation.');
-    return;
-  }
+  const records = await Promise.all(data.map(async (p: any) => {
+    console.log(`Generating embedding for ${p.name}...`);
+    const vector = await getEmbedding(`${p.name} ${p.specialty} ${p.registry} ${p.city}`);
+    return {
+      vector,
+      id: p.id,
+      name: p.name,
+      specialty: p.specialty,
+      registry: p.registry,
+      city: p.city,
+      status: p.status,
+      office: p.office
+    };
+  }));
 
   try {
     await db.dropTable(TABLE_NAME);
   } catch (e) {}
   
-  const tbl = await db.createTable(TABLE_NAME, records);
+  const table = await db.createTable(TABLE_NAME, records);
   console.log('Database sync complete.');
-  return tbl;
+  return table;
 }
 
 // Helper to get table, auto-initializing if needed
 async function getTable() {
   const db = await lancedb.connect(DB_PATH);
-  const tableNames = await db.tableNames();
-  
-  if (!tableNames.includes(TABLE_NAME)) {
-    console.log('Table not found, initializing database...');
+  try {
+    return await db.openTable(TABLE_NAME);
+  } catch (e) {
+    console.log('Table not found, initializing...');
     return await syncDatabase();
   }
-  return await db.openTable(TABLE_NAME);
 }
 
 export const server = {
@@ -101,22 +88,18 @@ export const server = {
     }),
     handler: async ({ messages }) => {
       const lastMessage = messages[messages.length - 1].content;
-      const ollama = getOllama();
+      const ollama = new Ollama({ host: OLLAMA_URL });
+      
+      console.log(`Chat request: "${lastMessage}"`);
       
       try {
         const table = await getTable();
         
-        if (!table) {
-            throw new Error('Database not available.');
-        }
-
-        // Get embedding for query
-        const queryResp = await ollama.embeddings({
-          model: 'nomic-embed-text',
-          prompt: lastMessage,
-        });
+        console.log('Generating query embedding...');
+        const queryVector = await getEmbedding(lastMessage);
         
-        const results = await table.search(queryResp.embedding).limit(3).toArray();
+        console.log('Searching vector database...');
+        const results = await table.search(queryVector).limit(3).toArray();
 
         const systemPrompt = `Eres un asistente experto y profesional de la Sociedad de Pediatría Regional Santander. Tu tono es médico, amable y formal.
 Usa EXCLUSIVAMENTE la siguiente información de afiliados recuperada de la base de datos para responder consultas sobre especialistas.
@@ -130,15 +113,21 @@ REGLAS:
 3. Sugiere contactar al +57 318 8017142 para más información si es necesario.
 4. No inventes información.`;
 
+        console.log('Calling Ollama chat...');
         const response = await ollama.chat({
-          model: 'llama3.2:3b',
-          messages: [{ role: 'system', content: systemPrompt }, ...messages]
+          model: CHAT_MODEL,
+          messages: [{ role: 'system', content: systemPrompt }, ...messages],
+          options: {
+            temperature: 0.2,
+            num_predict: 200,
+          }
         });
 
+        console.log('Response generated successfully.');
         return { role: 'assistant', content: response.message.content };
       } catch (error: any) {
-        console.error('Chat Error Detail:', error);
-        return { role: 'assistant', content: 'Error de comunicación con el motor de IA: ' + error.message };
+        console.error('Chat Action Error:', error);
+        return { role: 'assistant', content: "Lo sentimos, hubo un error procesando tu consulta: " + error.message };
       }
     }
   }),
@@ -172,10 +161,7 @@ REGLAS:
         data.push({ ...input, id: nextId });
       }
       await fs.writeFile(JSON_PATH, JSON.stringify(data, null, 2));
-      
-      // Re-initialize DB to force sync
-      await syncDatabase(); 
-      
+      await syncDatabase();
       return { success: true };
     }
   }),
@@ -186,9 +172,7 @@ REGLAS:
       const data = await getCurrentData();
       const filtered = data.filter((p: any) => p.id !== id);
       await fs.writeFile(JSON_PATH, JSON.stringify(filtered, null, 2));
-      
       await syncDatabase();
-
       return { success: true };
     }
   })
