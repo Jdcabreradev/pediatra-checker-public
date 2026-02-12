@@ -1,5 +1,6 @@
 import type { APIRoute } from 'astro';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import Groq from 'groq-sdk';
+import { Ollama } from 'ollama';
 import * as lancedb from '@lancedb/lancedb';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -12,16 +13,18 @@ const DB_PATH = path.join(DATA_DIR, 'lancedb');
 const TABLE_NAME = 'pediatricians';
 const JSON_PATH = path.join(DATA_DIR, 'pediatricians.json');
 
-// Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-const EMBED_MODEL = "gemini-embedding-001";
-const CHAT_MODEL = "gemini-flash-latest";
+// Initialize Clients
+const OLLAMA_URL = process.env.OLLAMA_HOST || 'http://host.docker.internal:11434';
+const EMBED_MODEL = "nomic-embed-text";
+const CHAT_MODEL = "llama-3.3-70b-versatile";
 
 async function getEmbedding(text: string) {
-  console.log(`[API] Embedding text: ${text.substring(0, 30)}...`);
-  const model = genAI.getGenerativeModel({ model: EMBED_MODEL });
-  const result = await model.embedContent(text);
-  return result.embedding.values;
+  const ollama = new Ollama({ host: OLLAMA_URL });
+  const response = await ollama.embeddings({
+    model: EMBED_MODEL,
+    prompt: text,
+  });
+  return response.embedding;
 }
 
 async function getCurrentData() {
@@ -36,27 +39,21 @@ async function getCurrentData() {
 }
 
 async function syncDatabase() {
-  console.log('[API] Syncing database with Gemini...');
   const db = await lancedb.connect(DB_PATH);
   const data = await getCurrentData();
   
   const records = await Promise.all(data.map(async (p: any) => {
-    try {
-      const vector = await getEmbedding(`${p.name} ${p.specialty} ${p.registry} ${p.city}`);
-      return {
-        vector,
-        id: p.id,
-        name: p.name,
-        specialty: p.specialty,
-        registry: p.registry,
-        city: p.city,
-        status: p.status,
-        office: p.office
-      };
-    } catch (err) {
-      console.error(`[API] Error embedding ${p.name}:`, err);
-      throw err;
-    }
+    const vector = await getEmbedding(`${p.name} ${p.specialty} ${p.registry} ${p.city}`);
+    return {
+      vector,
+      id: p.id,
+      name: p.name,
+      specialty: p.specialty,
+      registry: p.registry,
+      city: p.city,
+      status: p.status,
+      office: p.office
+    };
   }));
 
   try { await db.dropTable(TABLE_NAME); } catch (err) {}
@@ -73,13 +70,13 @@ async function getTable() {
 }
 
 export const POST: APIRoute = async ({ request }) => {
-  console.log('[API] Chat request received');
-  if (!process.env.GEMINI_API_KEY) {
-      return new Response('GEMINI_API_KEY not set', { status: 500 });
+  if (!process.env.GROQ_API_KEY) {
+      return new Response('GROQ_API_KEY not set', { status: 500 });
   }
 
   const { messages } = await request.json();
   const lastMessage = messages[messages.length - 1].content;
+  const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
   const { readable, writable } = new TransformStream();
   const writer = writable.getWriter();
@@ -100,29 +97,28 @@ REGLAS:
 2. Si no, indica cortésmente que no figura en la lista activa.
 3. Sugiere contactar al +57 318 8017142.`;
 
-      const model = genAI.getGenerativeModel({ model: CHAT_MODEL });
-      const result = await model.generateContentStream({
-        contents: [
-            { role: 'user', parts: [{ text: systemPrompt }] },
-            { role: 'model', parts: [{ text: 'Entendido. Consultaré el registro oficial.' }] },
+      const stream = await groq.chat.completions.create({
+        messages: [
+            { role: 'system', content: systemPrompt },
             ...messages.map((m: any) => ({
-                role: m.role === 'assistant' ? 'model' : 'user',
-                parts: [{ text: m.content }]
+                role: m.role === 'assistant' ? 'assistant' : 'user',
+                content: m.content
             }))
         ],
+        model: CHAT_MODEL,
+        stream: true,
       });
 
-      for await (const chunk of result.stream) {
-        const chunkText = chunk.text();
-        if (chunkText) {
-          await writer.write(encoder.encode(chunkText));
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content || '';
+        if (content) {
+          await writer.write(encoder.encode(content));
         }
       }
-      console.log('[API] Stream finished normally');
     } catch (err: any) {
-      console.error('[API] Error:', err);
+      console.error('API Error (Groq):', err);
       try {
-        await writer.write(encoder.encode('\n[Error: ' + (err.message || 'Desconocido') + ']'));
+        await writer.write(encoder.encode('\n[Error de motor Groq: ' + (err.message || 'Desconocido') + ']'));
       } catch (e) {}
     } finally {
       try {

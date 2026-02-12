@@ -1,6 +1,7 @@
 import { defineAction } from 'astro:actions';
 import { z } from 'astro:schema';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import Groq from 'groq-sdk';
+import { Ollama } from 'ollama';
 import * as lancedb from '@lancedb/lancedb';
 import fs from 'node:fs/promises';
 import path from 'node:path';
@@ -13,19 +14,22 @@ const DB_PATH = path.join(DATA_DIR, 'lancedb');
 const TABLE_NAME = 'pediatricians';
 const JSON_PATH = path.join(DATA_DIR, 'pediatricians.json');
 
-// Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
-const EMBED_MODEL = "gemini-embedding-001";
-const CHAT_MODEL = "gemini-flash-latest";
+// Initialize Clients
+const groq = new Groq({ apiKey: process.env.GROQ_API_KEY || '' });
+const ollama = new Ollama({ host: process.env.OLLAMA_HOST || 'http://host.docker.internal:11434' });
 
-// Helper to get embeddings from Gemini
+// Models
+const EMBED_MODEL = "nomic-embed-text";
+const CHAT_MODEL = "llama-3.3-70b-versatile";
+
+// Helper to get embeddings from local Ollama (Free & Offline)
 async function getEmbedding(text: string) {
-  console.log(`[ACTIONS] Embedding text: ${text.substring(0, 30)}...`);
-  if (!process.env.GEMINI_API_KEY) throw new Error('GEMINI_API_KEY no configurada');
-  
-  const model = genAI.getGenerativeModel({ model: EMBED_MODEL });
-  const result = await model.embedContent(text);
-  return result.embedding.values;
+  console.log(`[ACTIONS] Generating local embedding for: ${text.substring(0, 30)}...`);
+  const response = await ollama.embeddings({
+    model: EMBED_MODEL,
+    prompt: text,
+  });
+  return response.embedding;
 }
 
 async function getCurrentData() {
@@ -40,7 +44,7 @@ async function getCurrentData() {
 }
 
 async function syncDatabase() {
-  console.log('[ACTIONS] Syncing with Gemini Embeddings...');
+  console.log('[ACTIONS] Syncing database with local embeddings...');
   const db = await lancedb.connect(DB_PATH);
   const data = await getCurrentData();
   
@@ -82,9 +86,10 @@ export const server = {
       messages: z.array(z.object({ role: z.string(), content: z.string() }))
     }),
     handler: async ({ messages }) => {
-      console.log('[ACTIONS] Chat request received');
-      if (!process.env.GEMINI_API_KEY) {
-        return { role: 'assistant', content: '⚠️ Error: La clave GEMINI_API_KEY no está configurada.' };
+      console.log('[ACTIONS] Chat request received (Groq Engine)');
+      
+      if (!process.env.GROQ_API_KEY) {
+        return { role: 'assistant', content: '⚠️ Error: La clave GROQ_API_KEY no está configurada.' };
       }
 
       const lastMessage = messages[messages.length - 1].content;
@@ -101,25 +106,27 @@ ${JSON.stringify(results, null, 2)}
 REGLAS:
 1. Si el médico está en la lista, confirma con entusiasmo y da los detalles.
 2. Si no está, informa cortésmente y sugiere llamar al +57 318 8017142.
-3. No inventes médicos.`;
+3. No inventes médicos ni información fuera de la lista provista.
+4. Responde siempre en español.`;
 
-        const model = genAI.getGenerativeModel({ model: CHAT_MODEL });
-        const chat = model.startChat({
-          history: [
-            { role: "user", parts: [{ text: systemPrompt }] },
-            { role: "model", parts: [{ text: "Entendido. Consultaré el registro oficial de la Sociedad para dar información exacta." }] },
-            ...messages.slice(0, -1).map(m => ({
-              role: m.role === 'assistant' ? 'model' : 'user',
-              parts: [{ text: m.content }]
+        const chatCompletion = await groq.chat.completions.create({
+          messages: [
+            { role: "system", content: systemPrompt },
+            ...messages.map(m => ({
+              role: (m.role === 'assistant' ? 'assistant' : 'user') as "assistant" | "user" | "system",
+              content: m.content
             }))
           ],
+          model: CHAT_MODEL,
+          temperature: 0.2,
         });
 
-        const result = await chat.sendMessage(lastMessage);
-        return { role: 'assistant', content: result.response.text() };
+        const responseContent = chatCompletion.choices[0]?.message?.content || "No pude generar una respuesta.";
+        console.log('[ACTIONS] Groq response generated.');
+        return { role: 'assistant', content: responseContent };
       } catch (error: any) {
-        console.error('[ACTIONS] Gemini Error:', error);
-        return { role: 'assistant', content: 'Error de IA: ' + error.message };
+        console.error('[ACTIONS] Error:', error);
+        return { role: 'assistant', content: 'Error en el motor de IA: ' + error.message };
       }
     }
   }),
