@@ -13,6 +13,22 @@ const DB_PATH = path.join(DATA_DIR, 'lancedb');
 const TABLE_NAME = 'pediatricians';
 const JSON_PATH = path.join(DATA_DIR, 'pediatricians.json');
 
+// Initialize Ollama with explicit host from env
+const getOllama = () => new Ollama({ 
+  host: process.env.OLLAMA_HOST || 'http://host.docker.internal:11434' 
+});
+
+// Helper to get embeddings from Ollama (SEQUENTIAL to avoid timeouts)
+async function getEmbedding(text: string) {
+  const ollama = getOllama();
+  // Set a longer timeout if possible, but sequential calls usually fix the load issue
+  const response = await ollama.embeddings({
+    model: 'nomic-embed-text',
+    prompt: text,
+  });
+  return response.embedding;
+}
+
 // Get current data (from file or fallback to initial)
 async function getCurrentData() {
   try {
@@ -25,25 +41,20 @@ async function getCurrentData() {
   }
 }
 
-// Helper to get table, auto-initializing if needed
-async function getTable() {
+// Sync JSON to LanceDB
+async function syncDatabase() {
+  console.log('Starting database sync...');
   const db = await lancedb.connect(DB_PATH);
-  try {
-    return await db.openTable(TABLE_NAME);
-  } catch (e) {
-    console.log('Table not found, initializing database...');
-    
-    // Initialize Ollama client here for sync
-    const ollama = new Ollama({ host: process.env.OLLAMA_HOST || 'http://host.docker.internal:11434' });
-    const data = await getCurrentData();
-    
-    const records = await Promise.all(data.map(async (p: any) => {
-      const resp = await ollama.embeddings({
-        model: 'nomic-embed-text',
-        prompt: `${p.name} ${p.specialty} ${p.registry} ${p.city}`,
-      });
-      return {
-        vector: resp.embedding,
+  const data = await getCurrentData();
+  
+  const records = [];
+  // Use sequential loop to prevent Ollama overload/timeouts
+  for (const p of data) {
+    try {
+      console.log(`Generating embedding for ${p.name}...`);
+      const vector = await getEmbedding(`${p.name} ${p.specialty} ${p.registry} ${p.city}`);
+      records.push({
+        vector,
         id: p.id,
         name: p.name,
         specialty: p.specialty,
@@ -51,12 +62,36 @@ async function getTable() {
         city: p.city,
         status: p.status,
         office: p.office
-      };
-    }));
-
-    try { await db.dropTable(TABLE_NAME); } catch (err) {}
-    return await db.createTable(TABLE_NAME, records);
+      });
+    } catch (e) {
+      console.error(`Failed to generate embedding for ${p.name}:`, e);
+    }
   }
+
+  if (records.length === 0) {
+    console.error('No records to insert. Aborting table creation.');
+    return;
+  }
+
+  try {
+    await db.dropTable(TABLE_NAME);
+  } catch (e) {}
+  
+  const tbl = await db.createTable(TABLE_NAME, records);
+  console.log('Database sync complete.');
+  return tbl;
+}
+
+// Helper to get table, auto-initializing if needed
+async function getTable() {
+  const db = await lancedb.connect(DB_PATH);
+  const tableNames = await db.tableNames();
+  
+  if (!tableNames.includes(TABLE_NAME)) {
+    console.log('Table not found, initializing database...');
+    return await syncDatabase();
+  }
+  return await db.openTable(TABLE_NAME);
 }
 
 export const server = {
@@ -66,11 +101,15 @@ export const server = {
     }),
     handler: async ({ messages }) => {
       const lastMessage = messages[messages.length - 1].content;
-      const ollama = new Ollama({ host: process.env.OLLAMA_HOST || 'http://host.docker.internal:11434' });
+      const ollama = getOllama();
       
       try {
         const table = await getTable();
         
+        if (!table) {
+            throw new Error('Database not available.');
+        }
+
         // Get embedding for query
         const queryResp = await ollama.embeddings({
           model: 'nomic-embed-text',
@@ -135,9 +174,7 @@ REGLAS:
       await fs.writeFile(JSON_PATH, JSON.stringify(data, null, 2));
       
       // Re-initialize DB to force sync
-      const db = await lancedb.connect(DB_PATH);
-      try { await db.dropTable(TABLE_NAME); } catch (e) {}
-      await getTable(); 
+      await syncDatabase(); 
       
       return { success: true };
     }
@@ -150,9 +187,7 @@ REGLAS:
       const filtered = data.filter((p: any) => p.id !== id);
       await fs.writeFile(JSON_PATH, JSON.stringify(filtered, null, 2));
       
-      const db = await lancedb.connect(DB_PATH);
-      try { await db.dropTable(TABLE_NAME); } catch (e) {}
-      await getTable();
+      await syncDatabase();
 
       return { success: true };
     }
