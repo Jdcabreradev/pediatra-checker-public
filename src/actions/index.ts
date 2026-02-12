@@ -16,7 +16,7 @@ const JSON_PATH = path.join(DATA_DIR, 'pediatricians.json');
 // Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 const EMBED_MODEL = "gemini-embedding-001";
-const CHAT_MODEL = "gemini-2.0-flash";
+const CHAT_MODEL = "gemini-flash-latest";
 
 // Helper to get embeddings from Gemini
 async function getEmbedding(text: string) {
