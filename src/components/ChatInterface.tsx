@@ -50,12 +50,12 @@ const ChatInterface = () => {
   return (
     <div className="flex flex-col h-full w-full bg-[#0f172a] relative overflow-hidden">
       {/* Chat Messages */}
-      <div className="flex-grow overflow-y-auto p-4 md:p-8 space-y-6 md:space-y-8 bg-[#0f172a] custom-scrollbar relative">
+      <div className="grow overflow-y-auto p-4 md:p-8 space-y-6 md:space-y-8 bg-[#0f172a] custom-scrollbar relative">
         <div className="max-w-4xl mx-auto space-y-6 md:space-y-8">
             {messages.map((m, i) => (
             <div key={i} className={`flex ${m.role === 'user' ? 'justify-end' : 'justify-start'} animate-in fade-in slide-in-from-bottom-2 duration-300`}>
                 <div className={`flex gap-3 md:gap-4 max-w-[95%] md:max-w-[85%] ${m.role === 'user' ? 'flex-row-reverse' : ''}`}>
-                <div className={`mt-1 p-2 rounded-lg flex-shrink-0 shadow-sm ${m.role === 'user' ? 'bg-indigo-500 text-white' : 'bg-[#1e293b] text-indigo-400 border border-[#334155]'}`}>
+                <div className={`mt-1 p-2 rounded-lg shrink-0 shadow-sm ${m.role === 'user' ? 'bg-indigo-500 text-white' : 'bg-[#1e293b] text-indigo-400 border border-[#334155]'}`}>
                     {m.role === 'user' ? <User size={14} /> : <Bot size={14} />}
                 </div>
                 <div className={`p-3 md:p-4 rounded-2xl shadow-lg relative text-left ${
@@ -86,9 +86,9 @@ const ChatInterface = () => {
       </div>
 
       {/* Chat Input Area - Pinned to bottom */}
-      <div className="p-4 md:p-6 bg-[#1e293b] border-t border-[#334155] relative flex-shrink-0 shadow-2xl">
+      <div className="p-4 md:p-6 bg-[#1e293b] border-t border-[#334155] relative shrink-0 shadow-2xl">
         <form onSubmit={handleSend} className="flex gap-3 items-center max-w-4xl mx-auto w-full">
-            <div className="flex-grow">
+            <div className="grow">
                 <Input 
                     placeholder="Escriba el nombre o registro del médico..."
                     value={input}
